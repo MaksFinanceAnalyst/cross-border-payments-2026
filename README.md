@@ -13,3 +13,97 @@
 ​Цена вопроса: Комиссии выросли до 5-12%. Это налог на выживание. Моя работа как аналитика- рассчитывать LTV таких цепочек и следить, чтобы банки в хабах не триггернулись на аномальную активность.
 ## ​Вывод:
 Трансграничные платежи в 2026 году — это не про нажать кнопку. Это сложная финансовая инженерия. Побеждает тот, у кого шлюзы быстрее, а риск-модели  точнее.
+### исходный код скрипта для мониторинга спреда:
+```Python
+# -*- coding: utf-8 -*-
+import pandas as pd
+import requests
+import json
+
+def get_binance_p2p_rates(asset="USDT", fiat="RUB", trade_type="BUY"):
+    """
+    Получение актуальных курсов P2P с Binance API
+    """
+    url = "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search"
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0"
+    }
+    data = {
+        "asset": asset,
+        "fiat": fiat,
+        "merchantCheck": False,
+        "page": 1,
+        "payTypes": [],
+        "publisherType": None,
+        "rows": 10,
+        "tradeType": trade_type
+    }
+    
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        if response.status_code == 200:
+            res_data = response.json()
+            return res_data.get('data', [])
+    except Exception as e:
+        print(f"Ошибка при запросе к API: {e}")
+    return []
+
+def calculate_spread_and_pnl(investment, buy_price, sell_price, fee_percent=0.1):
+    """
+    Расчет спреда, чистого профита (PnL) и маржинальности сделки
+    """
+    # Расчет комиссий
+    total_fees = investment * (fee_percent / 100)
+    
+    # Количество купленного актива
+    crypto_amount = (investment - total_fees) / buy_price
+    
+    # Выручка от продажи
+    revenue = crypto_amount * sell_price
+    
+    # Чистый PnL и спред
+    pnl = revenue - investment
+    spread = ((sell_price - buy_price) / buy_price) * 100
+    margin = (pnl / investment) * 100
+    
+    return {
+        "Crypto Amount": round(crypto_amount, 4),
+        "Revenue": round(revenue, 2),
+        "Net PnL": round(pnl, 2),
+        "Spread (%)": round(spread, 2),
+        "Margin (%)": round(margin, 2)
+    }
+
+def generate_arbitrage_report(deal_data):
+    """
+    Сборка аналитического датафрейма через pandas для вывода таблицы в терминал
+    """
+    df = pd.DataFrame([deal_data])
+    print("\n" + "="*50)
+    print("      АНАЛИТИЧЕСКИЙ ОТЧЕТ ПО ОТС/Р2Р СДЕЛКЕ")
+    print("="*50)
+    print(df.to_string(index=False))
+    print("="*50 + "\n")
+
+if __name__ == "__main__":
+    # Тестовые параметры круга (пример для фиксации доходности)
+    START_CAPITAL = 100000  # Стартовый капитал в фиате
+    BUY_RATE = 92.10        # Курс закупа
+    SELL_RATE = 94.85       # Курс продажи (ОТС/P2P)
+    
+    print("[INFO] Запуск мониторинга и расчета спреда...")
+    
+    # Расчет метрик
+    metrics = calculate_spread_and_pnl(START_CAPITAL, BUY_RATE, SELL_RATE, fee_percent=0.15)
+    
+    # Добавление контекста
+    report_data = {
+        "Capital": START_CAPITAL,
+        "Buy Price": BUY_RATE,
+        "Sell Price": SELL_RATE,
+        **metrics
+    }
+    
+    # Вывод структурированной таблицы в консоль
+    generate_arbitrage_report(report_data)
